@@ -200,9 +200,10 @@ v1 is a personal tool, locally hosted. No auth, no multi-tenancy.
 | source | Enum(career_page, linkedin) | |
 | crawled_at | DateTime | |
 | overall_score | Int (0–100) | Null until scored |
-| score_breakdown | JSON | Full score object |
+| score_breakdown | JSON | Full score object; includes `low_signal_jd` bool |
 | score_status | Enum(pending, scored, error) | |
 | application_status | Enum(new, reviewing, applied, rejected, archived) | |
+| repost_of | FK → JobPosting (nullable) | Set if title+company matches an archived posting |
 
 ### Company
 | Field | Type | Notes |
@@ -224,6 +225,7 @@ v1 is a personal tool, locally hosted. No auth, no multi-tenancy.
 | suggested | Text | |
 | rationale | Text | |
 | status | Enum(pending, approved, rejected) | |
+| cv_version | String | SHA256 of `cv_markdown` at generation time |
 | created_at | DateTime | |
 
 ### UserProfile
@@ -243,6 +245,7 @@ v1 is a personal tool, locally hosted. No auth, no multi-tenancy.
 - `GET /jobs/{id}` — full posting + score breakdown
 - `PATCH /jobs/{id}/status` — update application status
 - `POST /jobs/{id}/tailor` — trigger Tailor for this posting
+- `POST /jobs/{id}/retry-score` — manually re-trigger Matcher for a pending/errored posting
 
 ### Suggestions
 - `GET /jobs/{id}/suggestions` — list suggestions for a posting
@@ -364,17 +367,17 @@ lazyseeker/
 
 ---
 
-## 12. Open Questions (for Claude review)
+## 12. Decisions (resolved 2026-03-09)
 
-The following questions are intentionally left open for AI-assisted review before implementation begins:
-
-1. LinkedIn scraping may violate ToS — should we default to RapidAPI wrapper or build an official OAuth integration?
-2. How should the Matcher handle very short JDs (< 100 words) where there's not enough signal to score reliably?
-3. Should the master CV be versioned? If the user updates it after suggestions have been generated, existing suggestions may become stale.
-4. What's the right dedup strategy when the same role is reposted after being closed?
-5. Should `companies.yaml` be user-editable via the UI in v1, or config-file only?
-6. How do we handle Hebrew-dominant JDs in the Tailor prompt — should we translate first or pass bilingual context directly to Claude?
-7. What's the failure mode when the Anthropic API is unavailable? Should unscored jobs surface in the feed or be held back?
+| # | Question | Decision |
+|---|---|---|
+| 1 | LinkedIn scraping ToS | Use RapidAPI wrapper in v1. Risk is accepted for personal use; document in `docs/decisions/`. LinkedIn source must be easy to disable per-company in `companies.yaml`. |
+| 2 | Short/vague JDs (< 100 words) | Score with `"low_signal_jd": true` flag; cap `overall_score` at 70. Show "Low signal — JD is vague" badge in dashboard. |
+| 3 | CV versioning | Store a `cv_version` hash (SHA256 of `cv_markdown`) on each `Suggestion`. When CV changes, warn "CV has changed since these suggestions were generated" and offer to regenerate. No full version history in v1. |
+| 4 | Reposted roles | Treat as a new `JobPosting`. If `title + company` matches an `archived` posting, set a `repost_of` FK to the original. Don't surface as fresh unless the score differs. |
+| 5 | `companies.yaml` UI editing | Config-file only in v1. Defer UI CRUD to v2. |
+| 6 | Hebrew JDs in Tailor | Pass bilingual content directly to Claude. Instruct Claude in the system prompt to respond in English regardless of JD language. Consistent with Matcher behavior. |
+| 7 | Anthropic API unavailable | Show unscored jobs in the feed with `score_status = "pending"` and an "Awaiting score" badge. Add a manual "Retry scoring" button on the job detail panel. Never hold back postings. |
 
 ---
 
