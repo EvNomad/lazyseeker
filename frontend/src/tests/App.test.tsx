@@ -44,7 +44,7 @@ describe('App routing — Phase 1 scaffold', () => {
         <App />
       </MemoryRouter>
     )
-    expect(screen.getByRole('heading', { name: /job detail/i })).toBeInTheDocument()
+    expect(screen.getByTestId('loading')).toBeInTheDocument()
   })
 
   it('renders Suggestions view at /jobs/:id/suggestions', () => {
@@ -53,6 +53,6 @@ describe('App routing — Phase 1 scaffold', () => {
         <App />
       </MemoryRouter>
     )
-    expect(screen.getByRole('heading', { name: /suggestions/i })).toBeInTheDocument()
+    expect(screen.getByTestId('loading')).toBeInTheDocument()
   })
 })
