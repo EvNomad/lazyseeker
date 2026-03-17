@@ -9,6 +9,7 @@ export default function JobFeedView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [languageFilter, setLanguageFilter] = useState<string>("");
+  const [sortByScore, setSortByScore] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -21,6 +22,15 @@ export default function JobFeedView() {
       )
       .finally(() => setLoading(false));
   }, [languageFilter]);
+
+  const displayedJobs = sortByScore
+    ? [...jobs].sort((a, b) => {
+        if (a.overall_score === null && b.overall_score === null) return 0;
+        if (a.overall_score === null) return 1;
+        if (b.overall_score === null) return -1;
+        return b.overall_score - a.overall_score;
+      })
+    : jobs;
 
   if (loading) return <div data-testid="loading">Loading...</div>;
   if (error) return <div data-testid="error">{error}</div>;
@@ -39,13 +49,24 @@ export default function JobFeedView() {
           <option value="he">Hebrew</option>
           <option value="mixed">Mixed</option>
         </select>
+        <button
+          data-testid="sort-btn"
+          onClick={() => setSortByScore((prev) => !prev)}
+          className={`px-3 py-1 text-sm rounded border transition-colors ${
+            sortByScore
+              ? "bg-blue-600 text-white border-blue-600"
+              : "bg-white text-gray-600 border-gray-300 hover:bg-gray-50"
+          }`}
+        >
+          Sort by score
+        </button>
         <span className="text-sm text-gray-500">{jobs.length} jobs</span>
       </div>
-      {jobs.length === 0 ? (
+      {displayedJobs.length === 0 ? (
         <p data-testid="empty-state">No jobs found.</p>
       ) : (
         <div className="flex flex-col gap-3" data-testid="job-list">
-          {jobs.map((job) => (
+          {displayedJobs.map((job) => (
             <JobCard
               key={job.id}
               job={job}

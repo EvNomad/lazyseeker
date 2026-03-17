@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { getJobSuggestions, tailorJob, patchSuggestion, getTailoredCv, ApiError } from "../api/client";
+import { getJobSuggestions, tailorJob, patchSuggestion, getTailoredCv, getJob, ApiError } from "../api/client";
 import type { Suggestion } from "../api/types";
 import { SuggestionCard } from "../components/SuggestionCard";
 
@@ -9,13 +9,16 @@ export default function SuggestionsView() {
   const navigate = useNavigate();
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [cvVersionCurrent, setCvVersionCurrent] = useState<string>("");
+  const [jobTitle, setJobTitle] = useState<string>("Job");
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
     loadSuggestions();
+    getJob(id).then((job) => setJobTitle(job.title)).catch(() => {});
   }, [id]);
 
   function loadSuggestions() {
@@ -53,16 +56,38 @@ export default function SuggestionsView() {
     setSuggestions((prev) => prev.map((s) => (s.id === suggestionId ? updated : s)));
   }
 
-  async function handleExport() {
-    if (!id) return;
-    const md = await getTailoredCv(id);
-    const blob = new Blob([md], { type: "text/markdown" });
+  function triggerDownload(content: string, filename: string) {
+    const blob = new Blob([content], { type: "text/markdown" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "tailored-cv.md";
+    a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  function buildFallbackMarkdown(): string {
+    const approvedSuggestions = suggestions.filter((s) => s.status === "approved");
+    const sections = approvedSuggestions
+      .map(
+        (s) =>
+          `## ${s.section}\n**Original:** ${s.original}\n**Suggested:** ${s.suggested}\n> Rationale: ${s.rationale}`
+      )
+      .join("\n\n");
+    return `# CV Suggestions for ${jobTitle}\n\n${sections}`;
+  }
+
+  async function handleExport() {
+    if (!id) return;
+    setExportError(null);
+    try {
+      const md = await getTailoredCv(id);
+      triggerDownload(md, "tailored-cv.md");
+    } catch (e) {
+      const message = e instanceof ApiError ? `Export failed (${e.status}). Downloading raw suggestions instead.` : "Export failed. Downloading raw suggestions instead.";
+      setExportError(message);
+      triggerDownload(buildFallbackMarkdown(), "tailored-cv.md");
+    }
   }
 
   const hasApproved = suggestions.some((s) => s.status === "approved");
@@ -95,6 +120,11 @@ export default function SuggestionsView() {
           </button>
         </div>
       </div>
+      {exportError && (
+        <div className="text-xs bg-red-50 text-red-700 px-3 py-2 rounded border border-red-200" data-testid="export-error">
+          {exportError}
+        </div>
+      )}
       {hasCvMismatch && (
         <div className="text-xs bg-yellow-50 text-yellow-700 px-3 py-2 rounded border border-yellow-200" data-testid="cv-mismatch-warning">
           Your CV has been updated since these suggestions were generated. Consider regenerating.
