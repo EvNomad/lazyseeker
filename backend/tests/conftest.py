@@ -1,6 +1,6 @@
 import pytest
+from sqlalchemy.pool import StaticPool
 from sqlmodel import create_engine, Session, SQLModel
-from httpx import AsyncClient
 from fastapi.testclient import TestClient
 
 from backend.app.db import get_session, create_db_and_tables
@@ -9,7 +9,13 @@ from backend.app.main import app
 
 @pytest.fixture(name="engine")
 def engine_fixture():
-    engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    # StaticPool reuses the same connection so all operations share
+    # the same in-memory database — required for SQLite :memory: testing.
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     create_db_and_tables(engine)
     yield engine
     engine.dispose()

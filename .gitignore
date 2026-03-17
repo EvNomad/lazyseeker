@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# SQLite
+*.db
+
+# Node
+node_modules/
+package-lock.json
+frontend/dist/
+
+# IDE
+.DS_Store
+.idea/
+.vscode/
+*.swp
