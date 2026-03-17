@@ -8,6 +8,7 @@ from backend.app.db import create_db_and_tables, engine
 from backend.app.routers.profile import router as profile_router
 from backend.app.routers.jobs import router as jobs_router
 from backend.app.routers.radar import router as radar_router
+from backend.app.routers.suggestions import router as suggestions_router
 
 
 async def _scheduled_crawl():
@@ -39,6 +40,7 @@ app = FastAPI(lifespan=lifespan)
 app.include_router(profile_router)
 app.include_router(jobs_router)
 app.include_router(radar_router)
+app.include_router(suggestions_router)
 
 
 @app.get("/healthz")
