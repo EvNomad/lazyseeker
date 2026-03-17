@@ -1,5 +1,6 @@
 import uuid
 import hashlib
+from pathlib import Path
 import pytest
 from unittest.mock import patch, AsyncMock
 from sqlmodel import Session, select
@@ -188,7 +189,7 @@ def test_save_posting_non_archived_same_title(session):
 @patch("backend.app.services.radar.fetch_static_page", new_callable=AsyncMock)
 @patch("backend.app.services.radar.fetch_job_detail", new_callable=AsyncMock)
 def test_last_crawled_at_updated(mock_detail, mock_static, session):
-    mock_static.return_value = open("backend/tests/fixtures/wix_careers.html").read()
+    mock_static.return_value = (Path(__file__).parent / "fixtures/wix_careers.html").read_text()
     mock_detail.return_value = {
         "url": "https://wix.com/jobs/1",
         "title": "Engineer",
