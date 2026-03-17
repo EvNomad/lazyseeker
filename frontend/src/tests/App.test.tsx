@@ -16,7 +16,8 @@ describe('App routing — Phase 1 scaffold', () => {
         <App />
       </MemoryRouter>
     )
-    expect(screen.getByRole('heading', { name: /job feed/i })).toBeInTheDocument()
+    // JobFeedView shows a loading state initially while fetching jobs
+    expect(screen.getByTestId('loading')).toBeInTheDocument()
   })
 
   it('renders Radar view at /radar', () => {
