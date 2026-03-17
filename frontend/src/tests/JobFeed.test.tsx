@@ -22,7 +22,7 @@ describe("JobFeedView", () => {
   it("renders job cards after load", async () => {
     renderFeed();
     await waitFor(() => expect(screen.getByTestId("job-list")).toBeInTheDocument());
-    expect(screen.getAllByTestId(/^job-card-/)).toHaveLength(3);
+    expect(screen.getAllByTestId("job-card")).toHaveLength(3);
   });
 
   it("shows job titles", async () => {

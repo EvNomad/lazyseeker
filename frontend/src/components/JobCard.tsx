@@ -20,7 +20,7 @@ export function JobCard({ job, onClick }: Props) {
     <div
       className="border rounded-lg p-4 bg-white hover:shadow-md cursor-pointer transition-shadow"
       onClick={onClick}
-      data-testid={`job-card-${job.id}`}
+      data-testid="job-card"
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
