@@ -1,6 +1,8 @@
 import asyncio
 import hashlib
+import logging
 import uuid
+from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal, Optional
@@ -20,6 +22,16 @@ from backend.app.models.job_posting import (
     ApplicationStatus,
 )
 
+logger = logging.getLogger(__name__)
+
+# Module-level crawl log and lock
+_crawl_log: deque = deque(maxlen=500)
+_crawl_lock = asyncio.Lock()
+
+
+class CrawlTimeoutError(Exception):
+    pass
+
 
 async def fetch_static_page(url: str, timeout: float = 10.0) -> str:
     """Fetch a static page and return its text content.
@@ -32,6 +44,44 @@ async def fetch_static_page(url: str, timeout: float = 10.0) -> str:
         response = await client.get(url, timeout=timeout)
         response.raise_for_status()
         return response.text
+
+
+async def fetch_with_playwright(url: str, timeout_ms: int = 30000) -> str:
+    """Fetch a JS-heavy page using Playwright (headless Chromium).
+
+    Raises:
+        CrawlTimeoutError: if the page load times out.
+    """
+    from playwright.async_api import async_playwright
+    from playwright.async_api import TimeoutError as PlaywrightTimeoutError
+
+    try:
+        async with async_playwright() as playwright:
+            browser = await playwright.chromium.launch(headless=True)
+            try:
+                page = await browser.new_page()
+                await page.goto(url, timeout=timeout_ms)
+                try:
+                    await page.wait_for_load_state("networkidle", timeout=5000)
+                except PlaywrightTimeoutError:
+                    pass  # continue with whatever loaded
+                return await page.content()
+            finally:
+                await browser.close()
+    except PlaywrightTimeoutError:
+        raise CrawlTimeoutError(f"Playwright timed out fetching {url}")
+
+
+async def fetch_career_page(url: str) -> str:
+    """Smart fetch: try static first, fall back to Playwright if no job links found."""
+    html = await fetch_static_page(url)
+    links = extract_job_links(html, url)
+    if links:
+        logger.debug("fetch_career_page: static fetch found %d links for %s", len(links), url)
+        return html
+    logger.debug("fetch_career_page: static fetch found 0 links for %s, falling back to Playwright", url)
+    html = await fetch_with_playwright(url)
+    return html
 
 
 # Keywords that indicate a job-related link.
@@ -218,6 +268,21 @@ class CrawlResult:
     error_message: Optional[str]
 
 
+@dataclass
+class CrawlLogEntry:
+    company_id: str
+    company_name: str
+    run_at: str  # ISO format datetime string
+    status: Literal["success", "error"]
+    new_postings: int
+    error_message: Optional[str]
+
+
+def get_crawl_log() -> list[CrawlLogEntry]:
+    """Return crawl log entries in reverse chronological order (newest first)."""
+    return list(reversed(list(_crawl_log)))
+
+
 def crawl_company(company: Company, session: Session) -> CrawlResult:
     """Fetch career page, extract job links, persist new postings, and return a CrawlResult."""
     html = asyncio.run(fetch_static_page(company.career_page_url))
@@ -243,10 +308,44 @@ def crawl_company(company: Company, session: Session) -> CrawlResult:
     )
 
 
+async def crawl_company_async(company: Company, session: Session) -> CrawlResult:
+    """Async version: fetch career page, extract job links, persist new postings, and return a CrawlResult."""
+    html = await fetch_career_page(company.career_page_url)
+    links = extract_job_links(html, company.career_page_url)
+
+    new_postings = 0
+    for link in links:
+        detail = await fetch_job_detail(link["url"])
+        result = save_posting(detail, company, Source.career_page, session)
+        if result is not None:
+            new_postings += 1
+
+    company.last_crawled_at = datetime.utcnow()
+    session.add(company)
+    session.commit()
+
+    return CrawlResult(
+        company_id=str(company.id),
+        company_name=company.name,
+        new_postings=new_postings,
+        status="success",
+        error_message=None,
+    )
+
+
 def run_crawl(session: Session) -> list[CrawlResult]:
     """Load active companies from DB, crawl each one, and return results.
 
     Each company is wrapped in try/except so a single failure does not abort the run.
+    """
+    return asyncio.run(run_crawl_async(session))
+
+
+async def run_crawl_async(session: Session) -> list[CrawlResult]:
+    """Async version: load active companies from DB, crawl each one, and return results.
+
+    Each company is wrapped in try/except so a single failure does not abort the run.
+    Appends a CrawlLogEntry to _crawl_log for each company.
     """
     statement = select(Company).where(Company.active == True)  # noqa: E712
     companies = session.exec(statement).all()
@@ -254,7 +353,15 @@ def run_crawl(session: Session) -> list[CrawlResult]:
     results: list[CrawlResult] = []
     for company in companies:
         try:
-            result = crawl_company(company, session)
+            result = await crawl_company_async(company, session)
+            log_entry = CrawlLogEntry(
+                company_id=result.company_id,
+                company_name=result.company_name,
+                run_at=datetime.utcnow().isoformat(),
+                status="success",
+                new_postings=result.new_postings,
+                error_message=None,
+            )
         except Exception as exc:
             result = CrawlResult(
                 company_id=str(company.id),
@@ -263,5 +370,14 @@ def run_crawl(session: Session) -> list[CrawlResult]:
                 status="error",
                 error_message=str(exc),
             )
+            log_entry = CrawlLogEntry(
+                company_id=str(company.id),
+                company_name=company.name,
+                run_at=datetime.utcnow().isoformat(),
+                status="error",
+                new_postings=0,
+                error_message=str(exc),
+            )
+        _crawl_log.append(log_entry)
         results.append(result)
     return results
