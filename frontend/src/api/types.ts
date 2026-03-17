@@ -49,8 +49,10 @@ export interface ScoreBreakdown {
 
 export interface UserProfile {
   id: string;
+  name: string;
+  email: string;
   cv_markdown: string;
-  preferences: string;
+  preferences: string | null;
   updated_at: string;
 }
 
