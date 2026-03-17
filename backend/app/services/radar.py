@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import logging
+import os
 import uuid
 from collections import deque
 from dataclasses import dataclass
@@ -130,6 +131,47 @@ async def fetch_job_detail(url: str) -> dict:
         "description": description,
         "requirements": requirements,
     }
+
+
+_LINKEDIN_RAPIDAPI_HOST = "linkedin-data-api.p.rapidapi.com"
+_LINKEDIN_SEARCH_URL = f"https://{_LINKEDIN_RAPIDAPI_HOST}/search-jobs"
+_LINKEDIN_ISRAEL_LOCATION_ID = "101620260"
+
+
+async def fetch_linkedin_jobs(company_name: str, rapidapi_key: str) -> list[dict]:
+    """Search LinkedIn jobs for a company via RapidAPI.
+
+    Calls the linkedin-data-api RapidAPI endpoint with Israel as the location.
+    Returns a list of dicts with 'url', 'title', 'description' keys.
+    On HTTP error: logs and returns empty list (does not crash).
+    """
+    headers = {
+        "X-RapidAPI-Key": rapidapi_key,
+        "X-RapidAPI-Host": _LINKEDIN_RAPIDAPI_HOST,
+    }
+    params = {
+        "keywords": company_name,
+        "locationId": _LINKEDIN_ISRAEL_LOCATION_ID,
+    }
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                _LINKEDIN_SEARCH_URL, headers=headers, params=params
+            )
+            response.raise_for_status()
+            data = response.json()
+    except httpx.HTTPError as exc:
+        logger.error("LinkedIn fetch failed for %r: %s", company_name, exc)
+        return []
+
+    jobs = []
+    for item in data.get("data", []):
+        url = item.get("url") or item.get("jobUrl") or ""
+        title = item.get("title") or ""
+        description = item.get("description") or ""
+        if url:
+            jobs.append({"url": url, "title": title, "description": description})
+    return jobs
 
 
 def hash_url(url: str) -> str:
@@ -346,14 +388,46 @@ async def run_crawl_async(session: Session) -> list[CrawlResult]:
 
     Each company is wrapped in try/except so a single failure does not abort the run.
     Appends a CrawlLogEntry to _crawl_log for each company.
+    Also fetches LinkedIn jobs for companies with use_linkedin=True in companies.yaml,
+    provided the RAPIDAPI_KEY environment variable is set.
     """
     statement = select(Company).where(Company.active == True)  # noqa: E712
     companies = session.exec(statement).all()
+
+    # Build a lookup of company id -> CompanyConfig for linkedin flag.
+    try:
+        company_configs = load_companies(COMPANIES_YAML_PATH)
+        linkedin_enabled_ids = {
+            str(cfg.id) for cfg in company_configs if cfg.use_linkedin
+        }
+    except Exception as exc:
+        logger.warning("Could not load companies config for LinkedIn flags: %s", exc)
+        linkedin_enabled_ids = set()
+
+    rapidapi_key = os.environ.get("RAPIDAPI_KEY", "")
+    if not rapidapi_key:
+        logger.warning(
+            "RAPIDAPI_KEY is not set — LinkedIn crawling will be skipped."
+        )
 
     results: list[CrawlResult] = []
     for company in companies:
         try:
             result = await crawl_company_async(company, session)
+
+            # LinkedIn crawl (if enabled for this company and key is available).
+            if rapidapi_key and str(company.id) in linkedin_enabled_ids:
+                linkedin_jobs = await fetch_linkedin_jobs(company.name, rapidapi_key)
+                for job in linkedin_jobs:
+                    save_posting(job, company, Source.linkedin, session)
+                    result = CrawlResult(
+                        company_id=result.company_id,
+                        company_name=result.company_name,
+                        new_postings=result.new_postings,
+                        status=result.status,
+                        error_message=result.error_message,
+                    )
+
             log_entry = CrawlLogEntry(
                 company_id=result.company_id,
                 company_name=result.company_name,
