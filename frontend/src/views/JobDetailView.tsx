@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { getJob, patchJobStatus, ApiError } from "../api/client";
+import { getJob, ApiError } from "../api/client";
 import type { JobPostingWithCompany, ScoreBreakdown } from "../api/types";
 import { ScoreBadge } from "../components/ScoreBadge";
 import { StatusChip } from "../components/StatusChip";
