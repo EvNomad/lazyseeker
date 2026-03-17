@@ -13,6 +13,7 @@ class CompanyConfig(BaseModel):
     career_page_url: str
     linkedin_slug: Optional[str]
     active: bool
+    use_linkedin: bool = False
 
 
 def load_companies(yaml_path: Path) -> list[CompanyConfig]:

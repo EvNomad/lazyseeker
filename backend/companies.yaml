@@ -4,27 +4,32 @@ companies:
     career_page_url: "https://www.wix.com/jobs"
     linkedin_slug: "wix"
     active: true
+    use_linkedin: true
 
   - id: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
     name: "monday.com"
     career_page_url: "https://monday.com/jobs"
     linkedin_slug: "mondaydotcom"
     active: true
+    use_linkedin: true
 
   - id: "c3d4e5f6-a7b8-9012-cdef-123456789012"
     name: "Fiverr"
     career_page_url: "https://www.fiverr.com/careers"
     linkedin_slug: "fiverr-international"
     active: true
+    use_linkedin: false
 
   - id: "d4e5f6a7-b8c9-0123-defa-234567890123"
     name: "Walla! Communications"
     career_page_url: "https://walla.jobs"
     linkedin_slug: null
     active: true
+    use_linkedin: false
 
   - id: "e5f6a7b8-c9d0-1234-efab-345678901234"
     name: "Check Point"
     career_page_url: "https://careers.checkpoint.com"
     linkedin_slug: "check-point-software-technologies"
     active: true
+    use_linkedin: false
