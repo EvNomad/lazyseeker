@@ -1,5 +1,8 @@
 import asyncio
+import hashlib
+import uuid
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Literal, Optional
 from urllib.parse import urljoin
 
@@ -9,6 +12,13 @@ from sqlmodel import Session, select
 
 from backend.app.config import CompanyConfig, COMPANIES_YAML_PATH, load_companies
 from backend.app.models.company import Company
+from backend.app.models.job_posting import (
+    JobPosting,
+    Language,
+    Source,
+    ScoreStatus,
+    ApplicationStatus,
+)
 
 
 async def fetch_static_page(url: str, timeout: float = 10.0) -> str:
@@ -72,6 +82,108 @@ async def fetch_job_detail(url: str) -> dict:
     }
 
 
+def hash_url(url: str) -> str:
+    """Return the SHA-256 hex digest of the stripped URL."""
+    return hashlib.sha256(url.strip().encode()).hexdigest()
+
+
+def detect_language(text: str) -> Language:
+    """Detect whether text is English, Hebrew, or mixed."""
+    try:
+        from langdetect import detect
+        from langdetect.lang_detect_exception import LangDetectException
+    except ImportError:
+        detect = None
+        LangDetectException = Exception
+
+    # Count alphabetic and Hebrew-range characters.
+    alpha_chars = sum(1 for c in text if c.isalpha())
+    hebrew_chars = sum(1 for c in text if "\u0590" <= c <= "\u05FF")
+    hebrew_ratio = hebrew_chars / max(alpha_chars, 1)
+
+    if detect is not None:
+        try:
+            lang = detect(text)
+            if lang in ("iw", "he") and hebrew_ratio > 0.30:
+                return Language.he
+            if hebrew_ratio > 0.10:
+                return Language.mixed
+            return Language.en
+        except LangDetectException:
+            pass
+
+    # Fallback: ratio only.
+    if hebrew_ratio > 0.30:
+        return Language.he
+    if hebrew_ratio > 0.10:
+        return Language.mixed
+    return Language.en
+
+
+def posting_exists(url_hash: str, session: Session) -> bool:
+    """Return True if a JobPosting with the given url_hash already exists."""
+    statement = select(JobPosting).where(JobPosting.url_hash == url_hash)
+    result = session.exec(statement).first()
+    return result is not None
+
+
+def find_archived_repost(
+    title: str, company_id: uuid.UUID, session: Session
+) -> Optional[uuid.UUID]:
+    """Find an archived posting for the same company with the same title (case-insensitive).
+
+    Returns its id or None.
+    """
+    normalised = " ".join(title.split()).lower()
+    statement = (
+        select(JobPosting)
+        .where(JobPosting.company_id == company_id)
+        .where(JobPosting.application_status == ApplicationStatus.archived)
+    )
+    candidates = session.exec(statement).all()
+    for candidate in candidates:
+        if " ".join(candidate.title.split()).lower() == normalised:
+            return candidate.id
+    return None
+
+
+def save_posting(
+    raw: dict, company: Company, source: Source, session: Session
+) -> Optional[JobPosting]:
+    """Persist a job posting if it has not been seen before.
+
+    Returns the new JobPosting or None if a duplicate URL was detected.
+    """
+    url = raw["url"]
+    url_hash = hash_url(url)
+
+    if posting_exists(url_hash, session):
+        return None
+
+    language = detect_language(
+        raw.get("description", "") + " " + raw.get("title", "")
+    )
+    repost_of = find_archived_repost(raw["title"], company.id, session)
+
+    posting = JobPosting(
+        url=url,
+        url_hash=url_hash,
+        company_id=company.id,
+        title=raw["title"],
+        description=raw.get("description", ""),
+        requirements=raw.get("requirements"),
+        language=language,
+        source=source,
+        score_status=ScoreStatus.pending,
+        application_status=ApplicationStatus.new,
+        repost_of=repost_of,
+    )
+    session.add(posting)
+    session.commit()
+    session.refresh(posting)
+    return posting
+
+
 def sync_companies_to_db(session: Session, companies: list[CompanyConfig]) -> None:
     """Upsert companies into the DB. Matches on id; inserts if missing, updates if present.
 
@@ -106,25 +218,29 @@ class CrawlResult:
     error_message: Optional[str]
 
 
-async def _crawl_company_async(company: Company) -> CrawlResult:
-    """Internal async implementation of company crawl."""
-    html = await fetch_static_page(company.career_page_url)
+def crawl_company(company: Company, session: Session) -> CrawlResult:
+    """Fetch career page, extract job links, persist new postings, and return a CrawlResult."""
+    html = asyncio.run(fetch_static_page(company.career_page_url))
     links = extract_job_links(html, company.career_page_url)
+
+    new_postings = 0
+    for link in links:
+        detail = asyncio.run(fetch_job_detail(link["url"]))
+        result = save_posting(detail, company, Source.career_page, session)
+        if result is not None:
+            new_postings += 1
+
+    company.last_crawled_at = datetime.utcnow()
+    session.add(company)
+    session.commit()
+
     return CrawlResult(
         company_id=str(company.id),
         company_name=company.name,
-        new_postings=len(links),
+        new_postings=new_postings,
         status="success",
         error_message=None,
     )
-
-
-def crawl_company(company: Company, session: Session) -> CrawlResult:
-    """Fetch career page, extract job links, and return a CrawlResult.
-
-    For Phase 2, new_postings is the count of extracted links (no DB persistence yet).
-    """
-    return asyncio.run(_crawl_company_async(company))
 
 
 def run_crawl(session: Session) -> list[CrawlResult]:
