@@ -1,5 +1,5 @@
 import { http, HttpResponse } from "msw";
-import type { JobPosting, UserProfile, Suggestion } from "../../api/types";
+import type { JobPosting, UserProfile, Suggestion, CrawlLogEntry } from "../../api/types";
 
 const BASE = "http://localhost:8000";
 
@@ -50,9 +50,20 @@ export const STUB_JOB_LOW: JobPosting = {
 
 export const STUB_PROFILE: UserProfile = {
   id: "profile-1",
+  name: "Jane Doe",
+  email: "jane@example.com",
   cv_markdown: "# My CV",
   preferences: "Remote",
   updated_at: "2026-03-17T09:00:00Z",
+};
+
+export const STUB_CRAWL_LOG_ENTRY: CrawlLogEntry = {
+  company_id: "company-1",
+  company_name: "Acme Corp",
+  run_at: "2026-03-17T10:00:00Z",
+  status: "success",
+  new_postings: 3,
+  error_message: null,
 };
 
 export const STUB_SUGGESTION: Suggestion = {

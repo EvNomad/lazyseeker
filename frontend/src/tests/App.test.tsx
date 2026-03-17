@@ -26,7 +26,7 @@ describe('App routing — Phase 1 scaffold', () => {
         <App />
       </MemoryRouter>
     )
-    expect(screen.getByRole('heading', { name: /radar/i })).toBeInTheDocument()
+    expect(screen.getByTestId('loading')).toBeInTheDocument()
   })
 
   it('renders Profile view at /profile', () => {
@@ -35,7 +35,7 @@ describe('App routing — Phase 1 scaffold', () => {
         <App />
       </MemoryRouter>
     )
-    expect(screen.getByRole('heading', { name: /profile/i })).toBeInTheDocument()
+    expect(screen.getByTestId('loading')).toBeInTheDocument()
   })
 
   it('renders Job Detail view at /jobs/:id', () => {

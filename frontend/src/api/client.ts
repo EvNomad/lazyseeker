@@ -73,3 +73,7 @@ export const postRadarRun = (): Promise<{ started: boolean }> =>
 
 export const getRadarLog = (): Promise<CrawlLogEntry[]> =>
   apiFetch<CrawlLogEntry[]>("/radar/log");
+
+// Canonical aliases used by RadarView
+export const triggerCrawl = postRadarRun;
+export const getCrawlLog = getRadarLog;
