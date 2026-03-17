@@ -31,6 +31,8 @@ class ApplicationStatus(str, Enum):
 
 
 class JobPosting(SQLModel, table=True):
+    __tablename__ = "job_posting"
+
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     url: str = Field(unique=True)
     url_hash: str = Field(index=True)
@@ -45,4 +47,4 @@ class JobPosting(SQLModel, table=True):
     score_breakdown: Optional[str] = Field(default=None)  # JSON text
     score_status: ScoreStatus = Field(default=ScoreStatus.pending)
     application_status: ApplicationStatus = Field(default=ApplicationStatus.new)
-    repost_of: Optional[uuid.UUID] = Field(default=None, foreign_key="jobposting.id")
+    repost_of: Optional[uuid.UUID] = Field(default=None, foreign_key="job_posting.id")

@@ -11,8 +11,10 @@ class SuggestionStatus(str, Enum):
 
 
 class Suggestion(SQLModel, table=True):
+    __tablename__ = "suggestion"
+
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    job_id: uuid.UUID = Field(foreign_key="jobposting.id")
+    job_id: uuid.UUID = Field(foreign_key="job_posting.id")
     section: str
     original: str
     suggested: str
