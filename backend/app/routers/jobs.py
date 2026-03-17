@@ -1,11 +1,13 @@
+import asyncio
 import uuid
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlmodel import Session, select
 from pydantic import BaseModel
 
-from backend.app.db import get_session
+from backend.app.db import get_session, engine
 from backend.app.models.job_posting import JobPosting, ApplicationStatus, ScoreStatus
+from backend.app.models.user_profile import UserProfile
 from backend.app.models.company import Company
 from backend.app.services.matcher import score_job_posting
 from backend.app.routers.profile import get_or_create_profile
@@ -101,6 +103,16 @@ def retry_score(
     session.add(job)
     session.commit()
 
-    background_tasks.add_task(score_job_posting, job, profile, session)
+    background_tasks.add_task(_run_scoring, job.id, profile.id)
 
     return {"score_status": "pending"}
+
+
+def _run_scoring(job_id: uuid.UUID, profile_id: uuid.UUID) -> None:
+    """Open a fresh session and run scoring — safe to use as a BackgroundTask."""
+    with Session(engine) as session:
+        job = session.get(JobPosting, job_id)
+        profile = session.get(UserProfile, profile_id)
+        if job is None or profile is None:
+            return
+        asyncio.run(score_job_posting(job, profile, session))
